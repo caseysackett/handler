@@ -3,9 +3,11 @@ package handler
 import (
 	"encoding/json"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/graphql-go/graphql"
 
@@ -20,9 +22,12 @@ const (
 
 type Handler struct {
 	Schema *graphql.Schema
-	
-	pretty bool
+
+	Pretty          bool
+	SkipValidation  bool
+	ShowRequestTime bool
 }
+
 type RequestOptions struct {
 	Query         string                 `json:"query" url:"query" schema:"query"`
 	Variables     map[string]interface{} `json:"variables" url:"variables" schema:"variables"`
@@ -126,11 +131,11 @@ func (h *Handler) ContextHandler(ctx context.Context, w http.ResponseWriter, r *
 		VariableValues: opts.Variables,
 		OperationName:  opts.OperationName,
 		Context:        ctx,
+		SkipValidation: h.SkipValidation,
 	}
 	result := graphql.Do(params)
 
-	
-	if h.pretty {
+	if h.Pretty {
 		w.WriteHeader(http.StatusOK)
 		buff, _ := json.MarshalIndent(result, "", "\t")
 
@@ -138,25 +143,37 @@ func (h *Handler) ContextHandler(ctx context.Context, w http.ResponseWriter, r *
 	} else {
 		w.WriteHeader(http.StatusOK)
 		buff, _ := json.Marshal(result)
-	
+
 		w.Write(buff)
 	}
 }
 
+func timeTrack(start time.Time) {
+	log.Printf("ServeHTTP took %s", time.Since(start))
+}
+
 // ServeHTTP provides an entrypoint into executing graphQL queries.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.ShowRequestTime {
+		defer timeTrack(time.Now())
+	}
+
 	h.ContextHandler(context.Background(), w, r)
 }
 
 type Config struct {
-	Schema *graphql.Schema
-	Pretty bool
+	Schema          *graphql.Schema
+	Pretty          bool
+	SkipValidation  bool
+	ShowRequestTime bool
 }
 
 func NewConfig() *Config {
 	return &Config{
-		Schema: nil,
-		Pretty: true,
+		Schema:          nil,
+		Pretty:          true,
+		SkipValidation:  false,
+		ShowRequestTime: false,
 	}
 }
 
@@ -169,7 +186,9 @@ func New(p *Config) *Handler {
 	}
 
 	return &Handler{
-		Schema: p.Schema,
-		pretty: p.Pretty,
+		Schema:          p.Schema,
+		Pretty:          p.Pretty,
+		SkipValidation:  p.SkipValidation,
+		ShowRequestTime: p.ShowRequestTime,
 	}
 }
